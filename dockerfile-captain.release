@@ -7,17 +7,12 @@ RUN apk add --update --no-cache make gcc g++ git curl openssl openssh
 WORKDIR /usr/src/app
 COPY . ./
 
-
 # Build backend code
 RUN npm ci && \
      npm run build && \
      npm ci --omit=dev && \
-     npm cache clean --force && \
-     mv ./edge-override.json ./config-override.json
-
-# This quick hack invalidates the cache.
-ADD https://www.google.com /time.now
-
+     npm cache clean --force
+      
 ENV NODE_ENV production
 ENV PORT 3000
 EXPOSE 3000
