@@ -1,0 +1,147 @@
+
+# Default catch-all page. e.g. if you enter SOME-RANDOM-CHARS.captainroot.domain.com
+    server {
+
+        # Catch all HTTP
+        listen       80;
+
+        # Catch all HTTPS
+        listen              443 ssl;
+        ssl_certificate     <%-fake.crtPath%>;
+        ssl_certificate_key <%-fake.keyPath%>;
+
+        server_name  _;
+
+        location /nginx_status {
+            stub_status on;
+
+            access_log off;
+
+            # This can be improved by adding authentication as well.
+            # CIDR Range IPs:
+            allow 172.16.0.0/12;
+            allow 10.0.0.0/8;
+            allow 192.168.0.0/16;
+            
+            deny all;
+        }
+
+        location / {
+            root   <%-captain.defaultHtmlDir%>;
+            index  index.html index.htm;
+        }
+
+        error_page 404 /index.html;
+        error_page 500 502 503 504 /error_generic_catch_all.html;
+    }
+
+
+# Captain dashboard at captain.captainroot.domain.com
+    server {
+
+	listen       80;
+	client_max_body_size 300m;
+
+	gzip on;
+	gzip_disable "MSIE [1-6]\.";
+	gzip_vary on;
+	gzip_proxied any;
+	gzip_comp_level 6;
+	gzip_min_length 16000;
+	gzip_buffers 16 8k;
+	gzip_types
+		text/css
+		text/plain
+		text/javascript
+		application/javascript
+		application/json
+		application/x-javascript
+		application/xml
+		application/xml+rss
+		application/xhtml+xml
+		application/x-font-ttf
+		application/x-font-opentype
+		application/vnd.ms-fontobject
+		image/svg+xml
+		image/x-icon
+		application/rss+xml
+		application/atom_xml;
+
+
+
+    <%
+        if (captain.hasRootSsl) {
+    %>
+        listen              443 ssl;
+        ssl_certificate     <%-captain.crtPath%>;
+        ssl_certificate_key <%-captain.keyPath%>;
+
+    <%
+        }
+    %>
+
+        server_name  <%-captain.domain%>;
+
+        # 127.0.0.11 is DNS set up by Docker, see:
+        # https://docs.docker.com/engine/userguide/networking/configure-dns/
+        # https://github.com/moby/moby/issues/20026
+        resolver 127.0.0.11 valid=10s;
+        set $upstream http://<%-captain.serviceName%>:<%-captain.serviceExposedPort%>;
+
+        # IMPORTANT!! Except proxy_read_timeout, this block should be same as location /api/v2/user/apps/appData
+        location / {
+            proxy_pass $upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # temporary until build process becomes an asynchronous process
+        location /api/v2/user/apps/appData {
+            proxy_pass $upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            proxy_read_timeout 120s;
+        }
+
+        # Used by Lets Encrypt
+        location /.well-known/acme-challenge/ {
+            root <%-captain.staticWebRoot%>;
+        }
+        
+        # Used by CapRover for health check
+        location /.well-known/captain-identifier {
+            root <%-captain.staticWebRoot%>;
+        }
+    }
+
+
+
+# Built-in Docker Registry at registry.captainroot.domain.com
+# Port 80/443 is used by Let's Encrypt to support HTTPS
+# But the Registry engine runs on port 996
+    server {
+
+        listen       80;
+        client_max_body_size 500m;
+
+    <%
+        if (registry.hasRootSsl) {
+    %>
+        listen              443 ssl;
+        ssl_certificate     <%-registry.crtPath%>;
+        ssl_certificate_key <%-registry.keyPath%>;
+    <%
+        }
+    %>
+
+        server_name  <%-registry.domain%>;
+
+        location / {
+            root <%-registry.staticWebRoot%>;
+        }
+    }
